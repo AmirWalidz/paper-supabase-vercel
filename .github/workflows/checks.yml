@@ -1,0 +1,36 @@
+name: Orbit checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm test
+      - name: Start local Supabase without logging its credentials
+        run: npm run db:start > "$RUNNER_TEMP/orbit-supabase.log" 2>&1
+      - run: node --import tsx scripts/local-env.ts
+      - run: npm run db:reset && npm run test:security
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build && npm run test:e2e
+      - if: always()
+        run: npm run db:stop > /dev/null 2>&1
